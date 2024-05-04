@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strings"
+	"time"
 
 	turbospec "github.com/tomquirk/turbospec/pkg"
 )
@@ -23,16 +23,24 @@ func run() error {
 
 	fmt.Printf("Doc loaded, openapi=%s\n", doc.OpenAPI)
 
-	builder := strings.Builder{}
-	turbospec.WriteTypes(doc, &builder)
+	// builder := strings.Builder{}
+	// turbospec.WriteTypes(doc, &builder)
+	// fmt.Println(builder.String())
 
-	fmt.Println(builder.String())
+	f, err := os.Create("types.ts")
+	if err != nil {
+		return err
+	}
+	turbospec.WriteTypes(doc, f)
 
 	return nil
 }
 
 func main() {
+	start := time.Now()
 	err := run()
+	elapsed := time.Since(start)
+	log.Printf("%s", elapsed)
 	if err != nil {
 		log.Fatal(err.Error())
 	}
