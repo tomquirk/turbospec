@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"log"
 	"os"
 	"time"
@@ -16,22 +15,20 @@ func run() error {
 	if specFilePath == "" {
 		return errors.New("no spec file path specified")
 	}
-	doc, err := turbospec.LoadSpec(specFilePath)
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("Doc loaded, openapi=%s\n", doc.OpenAPI)
-
-	// builder := strings.Builder{}
-	// turbospec.WriteTypes(doc, &builder)
-	// fmt.Println(builder.String())
 
 	f, err := os.Create("types.ts")
 	if err != nil {
 		return err
 	}
-	turbospec.WriteTypes(doc, f)
+	// builder := strings.Builder{}
+	// fmt.Println(builder.String())
+
+	transformer, err := turbospec.NewOpenapiTsTransformer()
+	if err != nil {
+		return err
+	}
+	transformer.LoadSpec(specFilePath)
+	transformer.Transform(f)
 
 	return nil
 }
