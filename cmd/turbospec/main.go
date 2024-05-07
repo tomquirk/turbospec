@@ -27,8 +27,13 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	transformer.LoadSpec(specFilePath)
-	transformer.Transform(f)
+
+	spec, err := turbospec.LoadSpec(specFilePath)
+	if err != nil {
+		return err
+	}
+
+	transformer.Transform(spec, f)
 
 	return nil
 }

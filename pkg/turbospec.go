@@ -15,8 +15,7 @@ type Builder interface {
 }
 
 type OpenapiTsTransformer struct {
-	openapiDoc *openapi3.T
-	tsBuilder  Builder
+	tsBuilder Builder
 }
 
 func NewOpenapiTsTransformer() (*OpenapiTsTransformer, error) {
@@ -30,11 +29,11 @@ func NewOpenapiTsTransformer() (*OpenapiTsTransformer, error) {
 	}, nil
 }
 
-func (transformer *OpenapiTsTransformer) ToTSPropertyObject(schema *openapi3.Schema) string {
+func (t *OpenapiTsTransformer) ToTSPropertyObject(schema *openapi3.Schema) string {
 	var properties []string
 	for k, v := range schema.Properties {
 		v.Value.Title = k
-		property, err := transformer.ToTSType(v, "")
+		property, err := t.ToTSType(v, "")
 		if err != nil {
 			fmt.Errorf(err.Error())
 			continue
@@ -45,16 +44,24 @@ func (transformer *OpenapiTsTransformer) ToTSPropertyObject(schema *openapi3.Sch
 	return fmt.Sprintf("{\n%s\n}", strings.Join(properties, "\n"))
 }
 
-func (transformer *OpenapiTsTransformer) ToTSPropertyArray(schema *openapi3.Schema) string {
-	return "unknown[] // TODO fix"
+func (t *OpenapiTsTransformer) ToTSPropertyArray(schema *openapi3.Schema) string {
+	itemType := "unknown"
+	if schema.Items.Value.Type.Is("string") {
+		itemType = "string"
+	} else if schema.Items.Value.Type.Is("integer") {
+		itemType = "number"
+	} else if schema.Items.Value.Type.Is("boolean") {
+		itemType = "boolean"
+	} else if schema.Items.Value.Type.Is("object") {
+		itemType = t.ToTSPropertyObject(schema.Items.Value)
+	} else if schema.Items.Value.Type.Is("array") {
+		itemType = t.ToTSPropertyArray(schema.Items.Value)
+	}
+
+	return fmt.Sprintf("%s[]", itemType)
 }
 
-func refToTypeName(ref string) string {
-	tok := strings.Split(ref, "/")
-	return tok[(len(tok) - 1)]
-}
-
-func (transformer *OpenapiTsTransformer) ToTSType(schema *openapi3.SchemaRef, alias string) (string, error) {
+func (t *OpenapiTsTransformer) ToTSType(schema *openapi3.SchemaRef, alias string) (string, error) {
 	tsType := ts.TSType{
 		Name:  schema.Value.Title, // TODO convert kebab-case to camelCase, add _ to names starting with a number
 		Type:  "unknown // TODO fix",
@@ -69,12 +76,12 @@ func (transformer *OpenapiTsTransformer) ToTSType(schema *openapi3.SchemaRef, al
 	} else if schema.Value.Type.Is("boolean") {
 		tsType.Type = "boolean"
 	} else if schema.Value.Type.Is("object") {
-		tsType.Type = transformer.ToTSPropertyObject(schema.Value)
+		tsType.Type = t.ToTSPropertyObject(schema.Value)
 	} else if schema.Value.Type.Is("array") {
-		tsType.Type = transformer.ToTSPropertyArray(schema.Value)
+		tsType.Type = t.ToTSPropertyArray(schema.Value)
 	}
 
-	tsTypeStr, err := transformer.tsBuilder.Build(tsType)
+	tsTypeStr, err := t.tsBuilder.Build(tsType)
 	if err != nil {
 		return "", err
 	}
@@ -82,11 +89,11 @@ func (transformer *OpenapiTsTransformer) ToTSType(schema *openapi3.SchemaRef, al
 	return tsTypeStr, nil
 }
 
-func (transformer *OpenapiTsTransformer) Transform(out io.Writer) {
-	for k, v := range transformer.openapiDoc.Components.Schemas {
+func (t *OpenapiTsTransformer) Transform(openapiDoc *openapi3.T, out io.Writer) {
+	for k, v := range openapiDoc.Components.Schemas {
 		v.Value.Title = k
 		// set "root"-level types to use type alias (type x = { ... })
-		typeStr, err := transformer.ToTSType(v, ts.TYPE_ALIAS_KEYWORD)
+		typeStr, err := t.ToTSType(v, ts.TYPE_ALIAS_KEYWORD)
 		if err != nil {
 			fmt.Errorf(err.Error())
 			continue
@@ -96,14 +103,18 @@ func (transformer *OpenapiTsTransformer) Transform(out io.Writer) {
 	}
 }
 
-func (transformer *OpenapiTsTransformer) LoadSpec(specFilePath string) error {
+func LoadSpec(specFilePath string) (*openapi3.T, error) {
 	loader := openapi3.NewLoader()
 	doc, err := loader.LoadFromFile(specFilePath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	fmt.Printf("Doc loaded, openapi=%s\n", doc.OpenAPI)
 
-	transformer.openapiDoc = doc
-	return nil
+	return doc, nil
+}
+
+func refToTypeName(ref string) string {
+	tok := strings.Split(ref, "/")
+	return tok[(len(tok) - 1)]
 }
