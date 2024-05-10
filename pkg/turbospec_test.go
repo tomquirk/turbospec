@@ -152,7 +152,7 @@ func TestToTSType(t *testing.T) {
 			},
 			alias: "",
 			want: `attributes: {
-name: string;
+	name: string;
 }[];`,
 		},
 		{
@@ -200,10 +200,44 @@ name: string;
 	name: string;
 };`,
 		},
+		{
+			schemaRef: &openapi3.SchemaRef{
+				Ref: "",
+				Value: &openapi3.Schema{
+					Type:  &openapi3.Types{"object"},
+					Title: "Person",
+					Properties: openapi3.Schemas{
+						"name": &openapi3.SchemaRef{
+							Ref: "",
+							Value: &openapi3.Schema{
+								Type:  &openapi3.Types{"object"},
+								Title: "name",
+								Properties: openapi3.Schemas{
+									"firstName": &openapi3.SchemaRef{
+										Ref: "",
+										Value: &openapi3.Schema{
+											Type:  &openapi3.Types{"string"},
+											Title: "firstName",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			alias: "type",
+			want: `type Person = {
+	name: {
+		a: string;
+		b: string;
+	};
+};`,
+		},
 	}
 
 	for _, tc := range testCases {
-		res, err := transformer.ToTSType(tc.schemaRef, tc.alias)
+		res, err := transformer.ToTSType(tc.schemaRef, tc.alias, 1)
 		if err != nil {
 			t.Fatalf(err.Error())
 		}

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/iancoleman/strcase"
 	"github.com/tomquirk/turbospec/pkg/builder"
 	"github.com/tomquirk/turbospec/pkg/ts"
 )
@@ -29,41 +30,34 @@ func NewOpenapiTsTransformer() (*OpenapiTsTransformer, error) {
 	}, nil
 }
 
-func (t *OpenapiTsTransformer) ToTSPropertyObject(schema *openapi3.Schema) string {
-	var properties []string
-	for k, v := range schema.Properties {
+func LoadSpec(specFilePath string) (*openapi3.T, error) {
+	loader := openapi3.NewLoader()
+	doc, err := loader.LoadFromFile(specFilePath)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Printf("Doc loaded, openapi=%s\n", doc.OpenAPI)
+
+	return doc, nil
+}
+
+func (t *OpenapiTsTransformer) Transform(openapiDoc *openapi3.T, out io.Writer) {
+	for k, v := range openapiDoc.Components.Schemas {
 		v.Value.Title = k
-		property, err := t.ToTSType(v, "")
+		// set "root"-level types to use type alias (type MyType = { ... })
+		typeStr, err := t.ToTSType(v, ts.TYPE_ALIAS_KEYWORD, 1)
 		if err != nil {
 			fmt.Errorf(err.Error())
 			continue
 		}
-		properties = append(properties, property)
-	}
 
-	return fmt.Sprintf("{\n%s\n}", strings.Join(properties, "\n"))
+		out.Write([]byte("\n" + typeStr))
+	}
 }
 
-func (t *OpenapiTsTransformer) ToTSPropertyArray(schema *openapi3.Schema) string {
-	itemType := "unknown"
-	if schema.Items.Value.Type.Is("string") {
-		itemType = "string"
-	} else if schema.Items.Value.Type.Is("integer") {
-		itemType = "number"
-	} else if schema.Items.Value.Type.Is("boolean") {
-		itemType = "boolean"
-	} else if schema.Items.Value.Type.Is("object") {
-		itemType = t.ToTSPropertyObject(schema.Items.Value)
-	} else if schema.Items.Value.Type.Is("array") {
-		itemType = t.ToTSPropertyArray(schema.Items.Value)
-	}
-
-	return fmt.Sprintf("%s[]", itemType)
-}
-
-func (t *OpenapiTsTransformer) ToTSType(schema *openapi3.SchemaRef, alias string) (string, error) {
+func (t *OpenapiTsTransformer) ToTSType(schema *openapi3.SchemaRef, alias string, distanceFromRoot int8) (string, error) {
 	tsType := ts.TSType{
-		Name:  schema.Value.Title, // TODO convert kebab-case to camelCase, add _ to names starting with a number
+		Name:  normalizeTypeName(schema.Value.Title),
 		Type:  "unknown // TODO fix",
 		Alias: alias,
 	}
@@ -76,9 +70,9 @@ func (t *OpenapiTsTransformer) ToTSType(schema *openapi3.SchemaRef, alias string
 	} else if schema.Value.Type.Is("boolean") {
 		tsType.Type = "boolean"
 	} else if schema.Value.Type.Is("object") {
-		tsType.Type = t.ToTSPropertyObject(schema.Value)
+		tsType.Type = t.ToTSPropertyObject(schema.Value, distanceFromRoot)
 	} else if schema.Value.Type.Is("array") {
-		tsType.Type = t.ToTSPropertyArray(schema.Value)
+		tsType.Type = t.ToTSPropertyArray(schema.Value, distanceFromRoot)
 	}
 
 	tsTypeStr, err := t.tsBuilder.Build(tsType)
@@ -89,29 +83,51 @@ func (t *OpenapiTsTransformer) ToTSType(schema *openapi3.SchemaRef, alias string
 	return tsTypeStr, nil
 }
 
-func (t *OpenapiTsTransformer) Transform(openapiDoc *openapi3.T, out io.Writer) {
-	for k, v := range openapiDoc.Components.Schemas {
+func (t *OpenapiTsTransformer) ToTSPropertyObject(schema *openapi3.Schema, distanceFromRoot int8) string {
+	tabs := strings.Repeat("\t", int(distanceFromRoot))
+	tabsClosingBrace := strings.Repeat("\t", int(distanceFromRoot-1))
+
+	var properties []string
+	for k, v := range schema.Properties {
 		v.Value.Title = k
-		// set "root"-level types to use type alias (type x = { ... })
-		typeStr, err := t.ToTSType(v, ts.TYPE_ALIAS_KEYWORD)
+		property, err := t.ToTSType(v, "", distanceFromRoot+1)
 		if err != nil {
 			fmt.Errorf(err.Error())
 			continue
 		}
-
-		out.Write([]byte(typeStr))
+		property = tabs + property
+		properties = append(properties, property)
 	}
+
+	return fmt.Sprintf("{\n%s\n%s}", strings.Join(properties, "\n"), tabsClosingBrace)
 }
 
-func LoadSpec(specFilePath string) (*openapi3.T, error) {
-	loader := openapi3.NewLoader()
-	doc, err := loader.LoadFromFile(specFilePath)
-	if err != nil {
-		return nil, err
+func (t *OpenapiTsTransformer) ToTSPropertyArray(schema *openapi3.Schema, distanceFromRoot int8) string {
+	itemType := "unknown"
+	if schema.Items.Value.Type.Is("string") {
+		itemType = "string"
+	} else if schema.Items.Value.Type.Is("integer") {
+		itemType = "number"
+	} else if schema.Items.Value.Type.Is("boolean") {
+		itemType = "boolean"
+	} else if schema.Items.Value.Type.Is("object") {
+		itemType = t.ToTSPropertyObject(schema.Items.Value, distanceFromRoot)
+	} else if schema.Items.Value.Type.Is("array") {
+		itemType = t.ToTSPropertyArray(schema.Items.Value, distanceFromRoot)
 	}
-	fmt.Printf("Doc loaded, openapi=%s\n", doc.OpenAPI)
 
-	return doc, nil
+	return fmt.Sprintf("%s[]", itemType)
+}
+
+func normalizeTypeName(name string) string {
+	if name[0] >= '0' && name[0] <= '9' {
+		name = "_" + name
+	}
+
+	if !strings.Contains(name, "-") {
+		return name
+	}
+	return strcase.ToLowerCamel(name)
 }
 
 func refToTypeName(ref string) string {
