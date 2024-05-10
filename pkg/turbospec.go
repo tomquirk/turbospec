@@ -3,6 +3,7 @@ package turbospec
 import (
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -45,7 +46,7 @@ func (t *OpenapiTsTransformer) Transform(openapiDoc *openapi3.T, out io.Writer) 
 	for k, v := range openapiDoc.Components.Schemas {
 		v.Value.Title = k
 		// set "root"-level types to use type alias (type MyType = { ... })
-		typeStr, err := t.ToTSType(v, ts.TYPE_ALIAS_KEYWORD, 1)
+		typeStr, err := t.ToTSType(v, ts.TYPE_ALIAS_KEYWORD, 1, false)
 		if err != nil {
 			fmt.Errorf(err.Error())
 			continue
@@ -55,11 +56,12 @@ func (t *OpenapiTsTransformer) Transform(openapiDoc *openapi3.T, out io.Writer) 
 	}
 }
 
-func (t *OpenapiTsTransformer) ToTSType(schema *openapi3.SchemaRef, alias string, distanceFromRoot int8) (string, error) {
+func (t *OpenapiTsTransformer) ToTSType(schema *openapi3.SchemaRef, alias string, distanceFromRoot int8, required bool) (string, error) {
 	tsType := ts.TSType{
-		Name:  normalizeTypeName(schema.Value.Title),
-		Type:  "unknown // TODO fix",
-		Alias: alias,
+		Name:     normalizeTypeName(schema.Value.Title),
+		Type:     "unknown // TODO fix",
+		Alias:    alias,
+		Required: required,
 	}
 	if schema.Ref != "" {
 		tsType.Type = refToTypeName(schema.Ref)
@@ -90,7 +92,8 @@ func (t *OpenapiTsTransformer) ToTSPropertyObject(schema *openapi3.Schema, dista
 	var properties []string
 	for k, v := range schema.Properties {
 		v.Value.Title = k
-		property, err := t.ToTSType(v, "", distanceFromRoot+1)
+		required := slices.Contains(schema.Required, k)
+		property, err := t.ToTSType(v, "", distanceFromRoot+1, required)
 		if err != nil {
 			fmt.Errorf(err.Error())
 			continue

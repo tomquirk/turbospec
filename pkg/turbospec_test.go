@@ -237,7 +237,7 @@ func TestToTSType(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		res, err := transformer.ToTSType(tc.schemaRef, tc.alias, 1)
+		res, err := transformer.ToTSType(tc.schemaRef, tc.alias, 1, false)
 		if err != nil {
 			t.Fatalf(err.Error())
 		}
