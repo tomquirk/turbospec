@@ -3,6 +3,7 @@ package turbospec
 import (
 	"fmt"
 	"io"
+	"log"
 	"slices"
 	"strings"
 
@@ -12,12 +13,21 @@ import (
 	"github.com/tomquirk/turbospec/pkg/ts"
 )
 
-type Builder interface {
+type TSBuilder interface {
 	Build(tsType ts.TSType) (string, error)
 }
 
 type OpenapiTsTransformer struct {
-	tsBuilder Builder
+	tsBuilder TSBuilder
+}
+
+type tsTypeOptions struct {
+	required bool
+	alias    string
+}
+
+type tsFormatOptions struct {
+	tabs int8
 }
 
 func NewOpenapiTsTransformer() (*OpenapiTsTransformer, error) {
@@ -46,9 +56,9 @@ func (t *OpenapiTsTransformer) Transform(openapiDoc *openapi3.T, out io.Writer) 
 	for k, v := range openapiDoc.Components.Schemas {
 		v.Value.Title = k
 		// set "root"-level types to use type alias (type MyType = { ... })
-		typeStr, err := t.ToTSType(v, ts.TYPE_ALIAS_KEYWORD, 1, false)
+		typeStr, err := t.ToTSType(v, tsTypeOptions{false, ts.TYPE_ALIAS_KEYWORD}, tsFormatOptions{1})
 		if err != nil {
-			fmt.Errorf(err.Error())
+			log.Println(err.Error())
 			continue
 		}
 
@@ -56,12 +66,12 @@ func (t *OpenapiTsTransformer) Transform(openapiDoc *openapi3.T, out io.Writer) 
 	}
 }
 
-func (t *OpenapiTsTransformer) ToTSType(schema *openapi3.SchemaRef, alias string, distanceFromRoot int8, required bool) (string, error) {
+func (t *OpenapiTsTransformer) ToTSType(schema *openapi3.SchemaRef, typeOpts tsTypeOptions, formatOpts tsFormatOptions) (string, error) {
 	tsType := ts.TSType{
 		Name:     normalizeTypeName(schema.Value.Title),
 		Type:     "unknown // TODO fix",
-		Alias:    alias,
-		Required: required,
+		Alias:    typeOpts.alias,
+		Required: typeOpts.required,
 	}
 	if schema.Ref != "" {
 		tsType.Type = refToTypeName(schema.Ref)
@@ -72,9 +82,9 @@ func (t *OpenapiTsTransformer) ToTSType(schema *openapi3.SchemaRef, alias string
 	} else if schema.Value.Type.Is("boolean") {
 		tsType.Type = "boolean"
 	} else if schema.Value.Type.Is("object") {
-		tsType.Type = t.ToTSPropertyObject(schema.Value, distanceFromRoot)
+		tsType.Type = t.ToTSPropertyObject(schema.Value, formatOpts)
 	} else if schema.Value.Type.Is("array") {
-		tsType.Type = t.ToTSPropertyArray(schema.Value, distanceFromRoot)
+		tsType.Type = t.ToTSPropertyArray(schema.Value, formatOpts)
 	}
 
 	tsTypeStr, err := t.tsBuilder.Build(tsType)
@@ -85,17 +95,17 @@ func (t *OpenapiTsTransformer) ToTSType(schema *openapi3.SchemaRef, alias string
 	return tsTypeStr, nil
 }
 
-func (t *OpenapiTsTransformer) ToTSPropertyObject(schema *openapi3.Schema, distanceFromRoot int8) string {
-	tabs := strings.Repeat("\t", int(distanceFromRoot))
-	tabsClosingBrace := strings.Repeat("\t", int(distanceFromRoot-1))
+func (t *OpenapiTsTransformer) ToTSPropertyObject(schema *openapi3.Schema, formatOpts tsFormatOptions) string {
+	tabs := strings.Repeat("\t", int(formatOpts.tabs))
+	tabsClosingBrace := strings.Repeat("\t", int(formatOpts.tabs-1))
 
 	var properties []string
 	for k, v := range schema.Properties {
 		v.Value.Title = k
 		required := slices.Contains(schema.Required, k)
-		property, err := t.ToTSType(v, "", distanceFromRoot+1, required)
+		property, err := t.ToTSType(v, tsTypeOptions{required, ""}, tsFormatOptions{formatOpts.tabs + 1})
 		if err != nil {
-			fmt.Errorf(err.Error())
+			log.Println(err.Error())
 			continue
 		}
 		property = tabs + property
@@ -105,7 +115,7 @@ func (t *OpenapiTsTransformer) ToTSPropertyObject(schema *openapi3.Schema, dista
 	return fmt.Sprintf("{\n%s\n%s}", strings.Join(properties, "\n"), tabsClosingBrace)
 }
 
-func (t *OpenapiTsTransformer) ToTSPropertyArray(schema *openapi3.Schema, distanceFromRoot int8) string {
+func (t *OpenapiTsTransformer) ToTSPropertyArray(schema *openapi3.Schema, formatOpts tsFormatOptions) string {
 	itemType := "unknown"
 	if schema.Items.Value.Type.Is("string") {
 		itemType = "string"
@@ -114,9 +124,9 @@ func (t *OpenapiTsTransformer) ToTSPropertyArray(schema *openapi3.Schema, distan
 	} else if schema.Items.Value.Type.Is("boolean") {
 		itemType = "boolean"
 	} else if schema.Items.Value.Type.Is("object") {
-		itemType = t.ToTSPropertyObject(schema.Items.Value, distanceFromRoot)
+		itemType = t.ToTSPropertyObject(schema.Items.Value, formatOpts)
 	} else if schema.Items.Value.Type.Is("array") {
-		itemType = t.ToTSPropertyArray(schema.Items.Value, distanceFromRoot)
+		itemType = t.ToTSPropertyArray(schema.Items.Value, formatOpts)
 	}
 
 	return fmt.Sprintf("%s[]", itemType)
