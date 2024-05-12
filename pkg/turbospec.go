@@ -22,7 +22,7 @@ type OpenapiTsTransformer struct {
 }
 
 type tsTypeOptions struct {
-	required bool
+	optional bool
 	alias    string
 }
 
@@ -56,7 +56,9 @@ func (t *OpenapiTsTransformer) Transform(openapiDoc *openapi3.T, out io.Writer) 
 	for k, v := range openapiDoc.Components.Schemas {
 		v.Value.Title = k
 		// set "root"-level types to use type alias (type MyType = { ... })
-		typeStr, err := t.ToTSType(v, tsTypeOptions{false, ts.TYPE_ALIAS_KEYWORD}, tsFormatOptions{1})
+		typeStr, err := t.ToTSType(v, tsTypeOptions{
+			optional: false, alias: ts.TYPE_ALIAS_KEYWORD,
+		}, tsFormatOptions{1})
 		if err != nil {
 			log.Println(err.Error())
 			continue
@@ -71,7 +73,7 @@ func (t *OpenapiTsTransformer) ToTSType(schema *openapi3.SchemaRef, typeOpts tsT
 		Name:     normalizeTypeName(schema.Value.Title),
 		Type:     "unknown // TODO fix",
 		Alias:    typeOpts.alias,
-		Required: typeOpts.required,
+		Optional: typeOpts.optional,
 	}
 	if schema.Ref != "" {
 		tsType.Type = refToTypeName(schema.Ref)
@@ -103,7 +105,8 @@ func (t *OpenapiTsTransformer) ToTSPropertyObject(schema *openapi3.Schema, forma
 	for k, v := range schema.Properties {
 		v.Value.Title = k
 		required := slices.Contains(schema.Required, k)
-		property, err := t.ToTSType(v, tsTypeOptions{required, ""}, tsFormatOptions{formatOpts.tabs + 1})
+		fmt.Println("optional", !required)
+		property, err := t.ToTSType(v, tsTypeOptions{optional: !required, alias: ""}, tsFormatOptions{tabs: formatOpts.tabs + 1})
 		if err != nil {
 			log.Println(err.Error())
 			continue

@@ -136,7 +136,8 @@ func TestToTSType(t *testing.T) {
 					Items: &openapi3.SchemaRef{
 						Ref: "",
 						Value: &openapi3.Schema{
-							Type: &openapi3.Types{"object"},
+							Type:     &openapi3.Types{"object"},
+							Required: []string{"name"},
 							Properties: openapi3.Schemas{
 								"name": &openapi3.SchemaRef{
 									Ref: "",
@@ -182,8 +183,9 @@ func TestToTSType(t *testing.T) {
 			schemaRef: &openapi3.SchemaRef{
 				Ref: "",
 				Value: &openapi3.Schema{
-					Type:  &openapi3.Types{"object"},
-					Title: "Person",
+					Type:     &openapi3.Types{"object"},
+					Title:    "Person",
+					Required: []string{"name"},
 					Properties: openapi3.Schemas{
 						"name": &openapi3.SchemaRef{
 							Ref: "",
@@ -210,6 +212,29 @@ func TestToTSType(t *testing.T) {
 						"name": &openapi3.SchemaRef{
 							Ref: "",
 							Value: &openapi3.Schema{
+								Type:  &openapi3.Types{"string"},
+								Title: "name",
+							},
+						},
+					},
+				},
+			},
+			alias: "type",
+			want: `type Person = {
+	name?: string;
+};`,
+		},
+		{
+			schemaRef: &openapi3.SchemaRef{
+				Ref: "",
+				Value: &openapi3.Schema{
+					Type:     &openapi3.Types{"object"},
+					Title:    "Person",
+					Required: []string{"name"},
+					Properties: openapi3.Schemas{
+						"name": &openapi3.SchemaRef{
+							Ref: "",
+							Value: &openapi3.Schema{
 								Type:  &openapi3.Types{"object"},
 								Title: "name",
 								Properties: openapi3.Schemas{
@@ -229,21 +254,20 @@ func TestToTSType(t *testing.T) {
 			alias: "type",
 			want: `type Person = {
 	name: {
-		a: string;
-		b: string;
+		firstName?: string;
 	};
 };`,
 		},
 	}
 
 	for _, tc := range testCases {
-		res, err := transformer.ToTSType(tc.schemaRef, tc.alias, 1, false)
+		res, err := transformer.ToTSType(tc.schemaRef, tsTypeOptions{false, tc.alias}, tsFormatOptions{1})
 		if err != nil {
 			t.Fatalf(err.Error())
 		}
 
 		if res != tc.want {
-			t.Fatalf("%s != %s", res, tc.want)
+			t.Fatalf("got:\n%s, but want:\n%s", res, tc.want)
 		}
 	}
 }

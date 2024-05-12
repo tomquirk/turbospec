@@ -25,7 +25,7 @@ func NewTSBuilder() (*TSBuilder, error) {
 	if err != nil {
 		return nil, err
 	}
-	defaultTypeTemplate, err := template.New("defaultTypeTemplate").Parse("{{.Name}}{{if .Required}}{{else}}?{{end}}: {{.Type}};")
+	defaultTypeTemplate, err := template.New("defaultTypeTemplate").Parse("{{.Name}}{{if .Optional}}?{{else}}{{end}}: {{.Type}};")
 	if err != nil {
 		return nil, err
 	}

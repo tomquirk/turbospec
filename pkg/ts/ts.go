@@ -6,5 +6,5 @@ type TSType struct {
 	Name     string
 	Type     string
 	Alias    string
-	Required bool
+	Optional bool
 }
